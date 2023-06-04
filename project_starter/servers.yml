@@ -144,8 +144,8 @@ Resources:
       SecurityGroups:
         - Ref: LBSecGroup
       Subnets:
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1-SN"
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB2-SN"
+        - Fn::ImportValue: !Sub ${EnvironmentName}-PUB1-SN
+        - Fn::ImportValue: !Sub ${EnvironmentName}-PUB2-SN
 
   WebServeAutoScalingrGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -155,8 +155,8 @@ Resources:
       MaxSize: "4"
       MinSize: "2"
       VPCZoneIdentifier:
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI1-SN"
-        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI2-SN"
+        - Fn::ImportValue: !Sub ${EnvironmentName}-PRI1-SN
+        - Fn::ImportValue: !Sub ${EnvironmentName}-PRI2-SN
       TargetGroupARNs:
         - Ref: WebServerTargetGroup
 
@@ -197,7 +197,7 @@ Resources:
       UnhealthyThresholdCount: 5
       VpcId:
         Fn::ImportValue:
-          Fn::Sub: "${EnvironmentName}-VPCID"
+          Fn::Sub: ${EnvironmentName}-VPCID
 
 Outputs:
   LoadBalancerSecurityGroup:
