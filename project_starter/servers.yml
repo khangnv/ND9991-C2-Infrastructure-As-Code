@@ -5,6 +5,219 @@ Parameters:
   EnvironmentName:
     Description: An environment name that will be prefixed to resource names
     Type: String
+  InstanceType:
+    Description: WebServer Instance Type
+    Type: String
+    Default: t3.medium
+  AmiId:
+    Description: Webserver Machine Image ID
+    Type: String
+    Default: ami-053b0d53c279acc90
 
 Resources:
-  # TBD
+  WebServerIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: S3ReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:Get*"
+                  - "s3:List*"
+                  - "s3-object-lambda:Get*"
+                  - "s3-object-lambda:List*"
+                Resource: "*"
+
+  WebServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref WebServerIamRole
+
+  LBSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub ${EnvironmentName}-VPCID
+      GroupDescription: allow http into load balancer and allow http from load balancer to web server
+
+  WebServerTargetSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:
+        Fn::ImportValue: !Sub ${EnvironmentName}-VPCID
+      GroupDescription: Webserver target group
+
+  LBIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+      GroupId:
+        Fn::GetAtt:
+          - LBSecGroup
+          - GroupId
+
+  LBEgressRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      DestinationSecurityGroupId:
+        Fn::GetAtt:
+          - WebServerTargetSG
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - LBSecGroup
+          - GroupId
+
+  WebServerInboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - LBSecGroup
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - WebServerTargetSG
+          - GroupId
+
+  WebServerEgressRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      CidrIp: 0.0.0.0/0
+      GroupId:
+        Fn::GetAtt:
+          - WebServerTargetSG
+          - GroupId
+
+  WebServerLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sdk"
+          Ebs:
+            VolumeSize: 10
+      IamInstanceProfile: !Ref WebServerInstanceProfile
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SecurityGroups:
+        - Ref: WebServerTargetSG
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt-get update -y
+          sudo apt-get install apache2 -y
+          sudo systemctl start apache2.service
+          cd /var/www/html
+          echo "Udacity - Project 2 Server Up and Running!" > index.html
+          sudo systemctl reload apache2.service
+
+  WebServerLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      SecurityGroups:
+        - Ref: LBSecGroup
+      Subnets:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB1-SN"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PUB2-SN"
+
+  WebServeAutoScalingrGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: "2"
+      LaunchConfigurationName: !Ref WebServerLaunchConfig
+      MaxSize: "4"
+      MinSize: "2"
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI1-SN"
+        - Fn::ImportValue: !Sub "${EnvironmentName}-PRI2-SN"
+      TargetGroupARNs:
+        - Ref: WebServerTargetGroup
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: WebServerTargetGroup
+      LoadBalancerArn:
+        Ref: WebServerLB
+      Port: "80"
+      Protocol: HTTP
+
+  LBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref WebServerTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values: [/]
+      ListenerArn: !Ref Listener
+      Priority: 1
+
+  WebServerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 20
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 8
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: "${EnvironmentName}-VPCID"
+
+Outputs:
+  LoadBalancerSecurityGroup:
+    Description: LoadBalancer SG ID
+    Value: !Ref LBSecGroup
+    Export:
+      Name: !Sub ${EnvironmentName}-LBSG
+
+  WebServerSecurityGroup:
+    Description: WebServer SG ID
+    Value: !Ref WebServerTargetSG
+    Export:
+      Name: !Sub ${EnvironmentName}-WebSG
+
+  WebServerInstanceProfile:
+    Description: Instance Profile for the WebServer with required IAM role
+    Value: !Ref WebServerInstanceProfile
+    Export:
+      Name: !Sub ${EnvironmentName}-InstanceProfile
+
+  LoadBalancerDnsName:
+    Description: DNS name for the loadbalancer
+    Value: !GetAtt WebServerLB.DNSName
