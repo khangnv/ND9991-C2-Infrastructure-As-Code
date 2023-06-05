@@ -1,6 +1,5 @@
 Description: >
   Khang Nguyen / Udacity 2023
-
 Parameters:
   EnvironmentName:
     Description: An environment name that will be prefixed to resource names
@@ -8,7 +7,7 @@ Parameters:
   InstanceType:
     Description: WebServer Instance Type
     Type: String
-    Default: t3.medium
+    Default: t2.micro
   AmiId:
     Description: Webserver Machine Image ID
     Type: String
@@ -37,8 +36,6 @@ Resources:
                 Action:
                   - "s3:Get*"
                   - "s3:List*"
-                  - "s3-object-lambda:Get*"
-                  - "s3-object-lambda:List*"
                 Resource: "*"
 
   WebServerInstanceProfile:
@@ -147,7 +144,7 @@ Resources:
         - Fn::ImportValue: !Sub ${EnvironmentName}-PUB1-SN
         - Fn::ImportValue: !Sub ${EnvironmentName}-PUB2-SN
 
-  WebServeAutoScalingrGroup:
+  WebServerAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       DesiredCapacity: "2"

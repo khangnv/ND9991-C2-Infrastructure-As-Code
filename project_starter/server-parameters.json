@@ -5,7 +5,7 @@
   },
   {
     "ParameterKey": "InstanceType",
-    "ParameterValue": "t3.medium"
+    "ParameterValue": "t2.micro"
   },
   {
     "ParameterKey": "AmiId",
